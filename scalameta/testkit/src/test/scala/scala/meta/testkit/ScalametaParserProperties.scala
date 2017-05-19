@@ -59,6 +59,53 @@ object ScalametaParserProperties {
     }
   }
 
+  class XmlLitCounter extends Traverser {
+    var expr, patt = 0
+
+    override def apply(tree: Tree): Unit = tree match {
+      case xml: Term.Xml =>
+        xml.parts.foreach(apply)
+        expr += 1
+      case xml: Pat.Xml  =>
+        xml.parts.foreach(apply)
+        patt += 1
+      case _ =>
+        super.apply(tree)
+    }
+  }
+
+  def runXmlAnalysis(corpusSize: Int = Int.MaxValue): mutable.Map[String, XmlLitCounter] = {
+    val corpus =
+      Corpus
+        .files(Corpus.fastparse)
+        .take(corpusSize)
+        .toBuffer
+        .par
+
+    val results = SyntaxAnalysis.run[XmlLitCounter](corpus) { file =>
+      file.jFile.parse[Source] match {
+        case Parsed.Success(s) =>
+          val counter = new XmlLitCounter
+          counter.apply(s)
+          Seq(counter)
+
+        case e: Parsed.Error =>
+          Nil
+      }
+    }
+
+    val stats = new mutable.HashMap[String, XmlLitCounter]()
+
+    results.foreach {
+      case (file, counter) =>
+        val repo = stats.getOrElseUpdate(file.repo, new XmlLitCounter)
+        repo.expr += counter.expr
+        repo.patt += counter.patt
+    }
+
+    stats
+  }
+
   def runAndPrintAnalysis(): Unit = {
     val result = runAnalysis(100)
     val markdown = Observation.markdownTable(result)
@@ -72,13 +119,12 @@ object ScalametaParserProperties {
 
 object ScalametaParserPropertyTest extends FunSuiteLike {
   import ScalametaParserProperties._
+
   def main(args: Array[String]): Unit = {
-    val result = runAnalysis()
-    val parserProken = result.count(_._2.kind == ParserBroken)
-    val prettyPrinterBroken = result.count(_._2.kind == PrettyPrinterBroken)
-    println(s"""Parser broken: $parserProken
-               |Pretty printer broken: $prettyPrinterBroken""".stripMargin)
-    assert(parserProken <= 7)
-    assert(prettyPrinterBroken <= 1922)
+    val stats = runXmlAnalysis()
+
+    for ((repo, counter) <- stats) {
+      println(s"$repo: Expr=${counter.expr}, Patt=${counter.patt}")
+    }
   }
 }

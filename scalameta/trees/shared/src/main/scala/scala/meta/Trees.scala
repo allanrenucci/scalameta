@@ -293,6 +293,14 @@ object Defn {
                     templ: Template) extends Defn with Member.Term {
     checkFields(templ.is[Template.Quasi] || templ.stats.forall(!_.is[Ctor]))
   }
+
+  @ast class Case(name: scala.meta.Type.Name, templ: Template) extends Defn with Member.Type
+
+  @ast class Enum(mods: List[Mod],
+                  name: scala.meta.Type.Name,
+                  ctor: Ctor.Primary,
+                  inits: List[Init],
+                  cases: List[Defn.Case]) extends Defn with Member.Type
 }
 
 @ast class Pkg(ref: Term.Ref, stats: List[Stat])
@@ -362,6 +370,7 @@ object Mod {
   @ast class Sealed() extends Mod
   @ast class Override() extends Mod
   @ast class Case() extends Mod
+  @ast class Enum() extends Mod
   @ast class Abstract() extends Mod
   @ast class Covariant() extends Mod
   @ast class Contravariant() extends Mod

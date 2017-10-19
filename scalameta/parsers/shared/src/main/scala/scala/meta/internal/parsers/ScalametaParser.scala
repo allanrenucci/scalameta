@@ -2879,6 +2879,12 @@ class ScalametaParser(input: Input, dialect: Dialect) { parser =>
         val casePos = in.tokenPos
         next()
         objectDef(mods :+ atPos(casePos, casePos)(Mod.Case()))
+      case KwEnum() if ahead(token.is[KwClass]) =>
+        val casePos = in.tokenPos
+        next()
+        tmplDef(mods :+ atPos(casePos, casePos)(Mod.Enum()))
+      case KwEnum() =>
+        enumDef(mods)
       case _ =>
         syntaxError(s"expected start of definition", at = token)
     }
@@ -2935,6 +2941,50 @@ class ScalametaParser(input: Input, dialect: Dialect) { parser =>
     Defn.Object(mods, termName(), templateOpt(OwnedByObject))
   }
 
+  def enumDef(mods: List[Mod]): Defn.Enum = atPos(mods, auto) {
+    accept[KwEnum]
+    val enumName = typeName()
+    // TODO validate modifiers
+    val typeParams = typeParamClauseOpt(ownerIsType = true, ctxBoundsAllowed = false /* TODO true? */)
+    val ctor = primaryCtor(OwnedByEnum)
+    val inits = templateParents()
+    val cases = enumCaseStats()
+    Defn.Enum(mods, enumName, typeParams, ctor, inits, cases)
+  }
+
+  def enumCaseStats(): List[Defn.Case] = {
+    val cases = new ListBuffer[Defn.Case] += enumCaseStat()
+    while (token.isNot[RightBrace]) {
+      acceptStatSep()
+      cases += enumCaseStat()
+    }
+    cases.toList
+  }
+
+  def enumCaseStat(): Defn.Case = autoPos {
+    val name = typeName()
+    val templ = ???
+    Case(name, templ)
+  }
+
+
+  /** EnumCase = `case' (EnumClassDef | ObjectDef) */
+  def enumCase(start: Offset): Defn.Case = autoPos {
+    accept[KwCase]
+    atPos(start, nameStart) {
+      val id = termIdent()
+      if (in.token == LBRACKET || in.token == LPAREN)
+        classDefRest(start, mods1, id.name.toTypeName)
+      else if (in.token == COMMA) {
+        in.nextToken()
+        val ids = commaSeparated(termIdent)
+        PatDef(mods1, id :: ids, TypeTree(), EmptyTree)
+      }
+      else
+        objectDefRest(start, mods1, id.name.asTermName)
+    }
+  }
+
 /* -------- CONSTRUCTORS ------------------------------------------- */
 
   // TODO: we need to store some string in Ctor.Name in order to represent constructor calls (which also use Ctor.Name)
@@ -2944,7 +2994,7 @@ class ScalametaParser(input: Input, dialect: Dialect) { parser =>
   // therefore, I'm going to use `Term.Name("this")` here for the time being
 
   def primaryCtor(owner: TemplateOwner): Ctor.Primary = autoPos {
-    if (owner.isClass || (owner.isTrait && dialect.allowTraitParameters)) {
+    if (owner.isClass || owner.isEnum || (owner.isTrait && dialect.allowTraitParameters)) {
       val mods = constructorAnnots() ++ ctorModifiers()
       val name = autoPos(Name.Anonymous())
       val paramss = paramClauses(ownerIsType = true, owner == OwnedByCaseClass)
@@ -3087,11 +3137,13 @@ class ScalametaParser(input: Input, dialect: Dialect) { parser =>
     def isTerm = this eq OwnedByObject
     def isClass = (this eq OwnedByCaseClass) || (this eq OwnedByClass)
     def isTrait = this eq OwnedByTrait
+    def isEnum = this eq OwnedByEnum
   }
   object OwnedByTrait extends TemplateOwner
   object OwnedByCaseClass extends TemplateOwner
   object OwnedByClass extends TemplateOwner
   object OwnedByObject extends TemplateOwner
+  object OwnedByEnum extends TemplateOwner
 
   def templateParents(): List[Init] = {
     val parents = ListBuffer[Init]()

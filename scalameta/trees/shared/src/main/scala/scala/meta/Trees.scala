@@ -294,10 +294,12 @@ object Defn {
     checkFields(templ.is[Template.Quasi] || templ.stats.forall(!_.is[Ctor]))
   }
 
+  // TODO modifiers?
   @ast class Case(name: scala.meta.Type.Name, templ: Template) extends Defn with Member.Type
 
   @ast class Enum(mods: List[Mod],
                   name: scala.meta.Type.Name,
+                  tparams: List[scala.meta.Type.Param],
                   ctor: Ctor.Primary,
                   inits: List[Init],
                   cases: List[Defn.Case]) extends Defn with Member.Type
